@@ -1,0 +1,172 @@
+<!doctype html>
+<html>
+  <head>
+    <title>Live Polling System</title>
+
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        background: #f4f6f8;
+        text-align: center;
+        margin: 0;
+        padding: 0;
+      }
+
+      .container {
+        margin-top: 50px;
+      }
+
+      .card {
+        background: white;
+        padding: 20px;
+        margin: 20px auto;
+        width: 300px;
+        border-radius: 10px;
+        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+      }
+
+      input {
+        padding: 8px;
+        margin: 5px;
+        width: 80%;
+        border-radius: 5px;
+        border: 1px solid #ccc;
+      }
+
+      button {
+        padding: 10px 15px;
+        margin: 10px;
+        border: none;
+        border-radius: 5px;
+        background: #007bff;
+        color: white;
+        cursor: pointer;
+        font-weight: bold;
+      }
+
+      button:hover {
+        background: #0056b3;
+      }
+
+      .vote-btn {
+        background: #28a745;
+      }
+
+      .vote-btn:hover {
+        background: #1e7e34;
+      }
+
+      #status {
+        font-weight: bold;
+        margin-top: 10px;
+      }
+
+      #result {
+        font-size: 18px;
+        margin-top: 10px;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div class="container">
+      <h2>🗳️ Live Polling System</h2>
+
+      <!-- Login -->
+      <div class="card">
+        <h3>Login</h3>
+        <input id="user" placeholder="Username" /><br />
+        <input id="pass" type="password" placeholder="Password" /><br />
+        <button onclick="login()">Login</button>
+
+        <div id="status">Not Connected</div>
+      </div>
+
+      <!-- Voting -->
+      <div class="card">
+        <h3>Vote</h3>
+        <button class="vote-btn" onclick="vote(1)">Option 1</button>
+        <button class="vote-btn" onclick="vote(2)">Option 2</button>
+
+        <div id="result">Waiting for result...</div>
+      </div>
+    </div>
+
+    <script>
+      let ws = null;
+      let loggedIn = false;
+
+      /* 🔥 LOAD SAVED RESULT ON PAGE LOAD */
+      window.onload = () => {
+        let saved = localStorage.getItem("lastResult");
+        if (saved) {
+          document.getElementById("result").innerText = saved;
+        }
+      };
+
+      function login() {
+        if (ws !== null) {
+          alert("Already connected!");
+          return;
+        }
+
+        ws = new WebSocket("ws://localhost:8080");
+
+        ws.onopen = () => {
+          let u = document.getElementById("user").value;
+          let p = document.getElementById("pass").value;
+
+          ws.send(u + " " + p);
+        };
+
+        ws.onmessage = (event) => {
+          let msg = event.data;
+          console.log("Server:", msg);
+
+          if (msg === "AUTH_SUCCESS") {
+            loggedIn = true;
+            document.getElementById("status").innerText = "✅ Logged in";
+          } else if (msg === "AUTH_FAIL") {
+            document.getElementById("status").innerText = "❌ Login Failed";
+          } else {
+            // 🔥 SAVE + SHOW RESULT
+            localStorage.setItem("lastResult", msg);
+            document.getElementById("result").innerText = msg;
+          }
+        };
+
+        ws.onclose = () => {
+          ws = null;
+          loggedIn = false;
+        };
+      }
+      function vote(option) {
+        let u = document.getElementById("user").value;
+        let p = document.getElementById("pass").value;
+
+        // 🔥 CHECK LOGIN FIRST
+        if (!u || !p) {
+          alert("Please login first!");
+          return;
+        }
+
+        document.getElementById("result").innerText = "Submitting vote...";
+
+        let voteSocket = new WebSocket("ws://localhost:8080");
+
+        voteSocket.onopen = () => {
+          voteSocket.send(u + " " + p);
+
+          setTimeout(() => {
+            voteSocket.send(option.toString());
+          }, 200);
+        };
+
+        voteSocket.onmessage = (e) => {
+          localStorage.setItem("lastResult", e.data);
+          document.getElementById("result").innerText = e.data;
+        };
+      }
+    </script>
+  </body>
+</html>

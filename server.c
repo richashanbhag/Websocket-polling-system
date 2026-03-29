@@ -17,7 +17,7 @@ int clients[MAX_CLIENTS];
 int count = 0;
 pthread_mutex_t lock;
 
-/* 🔹 STRUCT for client */
+/* 🔹 STRUCT */
 typedef struct
 {
     int sock;
@@ -39,7 +39,7 @@ void broadcast(char *msg)
     printf("[BROADCAST] %s\n", msg);
 }
 
-/* 🔹 Handle client */
+/* 🔹 HANDLE CLIENT */
 void *handle(void *arg)
 {
     client_info *c = (client_info *)arg;
@@ -47,68 +47,66 @@ void *handle(void *arg)
     char *ip = c->ip;
 
     char buffer[1024];
-    char user[50] = "unknown";
+    char user[50], pass[50];
 
     printf("[SERVER] Client connected (%s)\n", ip);
 
-    /* 🔹 Handshake */
     websocket_handshake(sock);
-    printf("[HANDSHAKE] Completed (%s)\n", ip);
 
-    /* 🔹 LOGIN */
-    if (websocket_receive(sock, buffer) <= 0)
+    /* LOGIN */
+    while (1)
     {
-        close(sock);
-        free(c);
-        return NULL;
+        if (websocket_receive(sock, buffer) <= 0)
+            continue;
+
+        if (sscanf(buffer, "%s %s", user, pass) == 2)
+            break;
     }
 
-    char pass[50];
-    sscanf(buffer, "%s %s", user, pass);
-
-    printf("[LOGIN ATTEMPT] %s (%s)\n", user, ip);
+    printf("[LOGIN] %s (%s)\n", user, ip);
 
     if (!check_user(user, pass))
     {
         websocket_send(sock, "AUTH_FAIL");
-        printf("[AUTH] Failed (%s)\n", user);
-
-        log_event("Login failed", user, -1, ip);
-
         close(sock);
         free(c);
         return NULL;
     }
 
     websocket_send(sock, "AUTH_SUCCESS");
-    log_event("User login", user, -1, ip);
+    int a, b;
+    get_results(&a, &b);
 
-    printf("[AUTH] Success: %s (%s)\n", user, ip);
+    char result[100];
+    sprintf(result, "RESULT %d %d", a, b);
 
-    /* 🔹 VOTE */
-    if (websocket_receive(sock, buffer) <= 0)
+    websocket_send(sock, result);
+    /* VOTE */
+    int vote = -1;
+
+    while (1)
     {
-        close(sock);
-        free(c);
-        return NULL;
-    }
+        if (websocket_receive(sock, buffer) <= 0)
+            continue;
 
-    int vote = atoi(buffer);
+        if (strcmp(buffer, "1") == 0 || strcmp(buffer, "2") == 0)
+        {
+            vote = atoi(buffer);
+            break;
+        }
+    }
 
     if (check_voted(user))
     {
         websocket_send(sock, "ALREADY_VOTED");
-
-        printf("[VOTE] Duplicate attempt by %s (%s)\n", user, ip);
-
-        log_event("Duplicate vote attempt", user, vote, ip);
+        log_event("Duplicate vote", user, vote, ip);
+        printf("[VOTE] Duplicate %s\n", user);
     }
     else
     {
         store_vote(user, vote);
 
-        printf("[VOTE] %s voted %d (%s)\n", user, vote, ip);
-
+        /* ADD LOGGING */
         log_event("Vote submitted", user, vote, ip);
 
         int a, b;
@@ -117,20 +115,17 @@ void *handle(void *arg)
         char result[100];
         sprintf(result, "RESULT %d %d", a, b);
 
-        broadcast(result);
+        /*  SEND RESULT TO CLIENT */
+        websocket_send(sock, result);
+
+        printf("[VOTE] %s voted %d (%s)\n", user, vote, ip);
     }
-
-    /* 🔹 DISCONNECT */
-    log_event("User disconnected", user, -1, ip);
-
-    printf("[DISCONNECT] %s (%s)\n", user, ip);
-
+    sleep(1);
     close(sock);
     free(c);
 
     return NULL;
 }
-
 /* 🔹 MAIN */
 int main()
 {
@@ -146,6 +141,7 @@ int main()
 
     int flag = 1;
     setsockopt(server_fd, IPPROTO_TCP, TCP_NODELAY, &flag, sizeof(flag));
+
     int keepalive = 1;
     setsockopt(server_fd, SOL_SOCKET, SO_KEEPALIVE, &keepalive, sizeof(keepalive));
 
